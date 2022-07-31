@@ -110,13 +110,13 @@ pub fn get_current_taskinfo(taskinfo: &mut TaskInfo){
     current_task().unwrap().get_current_taskinfo(taskinfo);
 }
 
-pub fn call_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> isize {
+pub fn set_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> bool {
     let task = current_task().unwrap();
     let memory_set = &mut task.inner_exclusive_access().memory_set;
     memory_set.set_mmap(start_va, end_va, perm)
 }
 
-pub fn call_munmap(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+pub fn set_munmap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
     let task = current_task().unwrap();
     let memory_set = &mut task.inner_exclusive_access().memory_set;
     memory_set.set_munmap(start_va, end_va)

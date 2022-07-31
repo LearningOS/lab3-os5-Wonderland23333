@@ -7,7 +7,7 @@ use crate::loader::get_app_data_by_name;
 use crate::mm::{translated_refmut, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,get_current_taskinfo,call_mmap,call_munmap
+    suspend_current_and_run_next, TaskStatus,get_current_taskinfo,set_munmap,set_mmap
 };
 use crate::timer::get_time_us;
 use alloc::sync::Arc;
@@ -173,10 +173,12 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
     let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
 
-    let ok = call_mmap(start_va, end_va, perm);
-    ok
+    let jd = set_mmap(start_va, end_va, perm);
+    if !jd {
+        return -1;
+    }
+    0
 }
-
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     if _start % PAGE_SIZE != 0 { // 未对齐
         return -1;
@@ -189,10 +191,12 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
     let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
     
-    let ok = call_munmap(start_va, end_va);
-    ok
+    let ok = set_munmap(start_va, end_va);
+    if !ok {
+        return -1;
+    }
+    0
 }
-
 //
 // YOUR JOB: 实现 sys_spawn 系统调用
 // ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC 
