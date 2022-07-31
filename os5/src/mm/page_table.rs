@@ -199,7 +199,7 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
 
 
 // 
-pub fn translated_va2pa(token: usize, va: VirtAddr) -> usize {
+pub fn translated_vapg(token: usize, va: VirtAddr) -> usize {
     let page_table = PageTable::from_token(token);
     let pa = page_table.translate_va(va).unwrap();
     pa.0

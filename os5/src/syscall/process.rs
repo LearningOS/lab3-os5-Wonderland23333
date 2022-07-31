@@ -105,14 +105,8 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 // YOUR JOB: 引入虚地址后重写 sys_get_time
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     let _us = get_time_us();
-    // unsafe {
-    //     *ts = TimeVal {
-    //         sec: us / 1_000_000,
-    //         usec: us % 1_000_000,
-    //     };
-    // }
     let va = VirtAddr::from(_ts as usize);
-    let pa = translated_va2pa(current_user_token(), va);
+    let pa = translated_vapg(current_user_token(), va);
 
     let ptr_ts = pa as *mut TimeVal;
     unsafe {
@@ -126,28 +120,12 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    let va = VirtAddr::from(ti as usize);
-    let pa = translated_va2pa(current_user_token(), va);
-
-    let time = cal_time(get_time_us());
-
-    let ptr_ti = pa as *mut TaskInfo;
-    unsafe {
-        *ptr_ti = TaskInfo {
-            status: get_current_task_status(),
-            syscall_times: get_current_syscall_times(),
-            time,
-        };
-    }
+    let token = current_user_token();
+    let ti = translated_refmut(token, ti);
+    get_current_task_info(ti);
     0
 }
 
-pub fn cal_time(us: usize) -> usize {
-    let sec = us / 1_000_000;
-    let usec = us % 1_000_000;
-
-    ((sec & 0xffff) * 1000 + usec / 1000) as usize
-}
 
 // YOUR JOB: 实现sys_set_priority，为任务添加优先级
 // 合法返回proi, 否则返回-1
@@ -161,9 +139,8 @@ pub fn sys_set_priority(_prio: isize) -> isize {
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
-// YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    if _start % PAGE_SIZE != 0 { // 未对齐
+    if _start % PAGE_SIZE != 0 {
         return -1;
     }
 
@@ -186,7 +163,7 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    if _start % PAGE_SIZE != 0 { // 未对齐
+    if _start % PAGE_SIZE != 0 {
         return -1;
     }
 
@@ -209,14 +186,12 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 // ALERT: 注意在实现 SPAWN 时不需要复制父进程地址空间，SPAWN != FORK + EXEC 
 pub fn sys_spawn(_path: *const u8) -> isize {
     let path = translated_str(current_user_token(), _path);
-    // assume the name is valid
     let elf_data = get_app_data_by_name(path.as_str()).unwrap();
 
     let current_task = current_task().unwrap();
     let new_task = current_task.spawn(elf_data);
     let new_pid = new_task.pid.0;
 
-    //add new task to scheduler
     add_task(new_task);
     new_pid as isize
 }

@@ -32,6 +32,7 @@ use fs::*;
 use process::*;
 
 use crate::task::incr_syscall_times;
+pub use process::TaskInfo;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {

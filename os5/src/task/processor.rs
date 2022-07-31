@@ -14,6 +14,7 @@ use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
 use crate::mm::*;
+use crate::syscall::TaskInfo;
 
 /// Processor management structure
 pub struct Processor {
@@ -141,4 +142,8 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+pub fn get_current_task_info(task_info: &mut TaskInfo) {
+    current_task().unwrap().get_current_task_info(task_info)
 }
