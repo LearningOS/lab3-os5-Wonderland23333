@@ -73,20 +73,6 @@ pub fn run_tasks() {
         }
     }
 }
-
-// get status of the current task
-pub fn get_current_task_status() -> TaskStatus {
-    let task = current_task().unwrap();
-    let status = task.inner_exclusive_access().get_status();
-    status
-}
-
-pub fn get_current_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
-    let task = current_task().unwrap();
-    let syscall_times = task.inner_exclusive_access().get_syscall_times();
-    syscall_times
-}
-
 pub fn incr_syscall_times(syscall_id: usize) {
     let task = current_task().unwrap();
     task.inner_exclusive_access().set_syscall_times(syscall_id);
