@@ -2,71 +2,16 @@
 
 use super::TaskContext;
 use super::{pid_alloc, KernelStack, PidHandle};
-use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM, TRAP_CONTEXT};
+use crate::config::{TRAP_CONTEXT, BIG_STRIDE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
-use core::cmp::Ordering;
 use crate::syscall::TaskInfo;
-use crate::timer::{get_time, time_to_ms};
-
-// impl Eq for TaskControlBlock {}
-//
-// impl Ord for TaskControlBlock {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         self.partial_cmp(other).unwrap()
-//     }
-// }
-//
-// impl PartialOrd for TaskControlBlock {
-//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//         let inner = self.inner_exclusive_access();
-//         let other_inner = other.inner_exclusive_access();
-//         Some(inner.pass.cmp(&other_inner.pass))
-//     }
-// }
-//
-// impl PartialEq for TaskControlBlock {
-//     fn eq(&self, other: &Self) -> bool {
-//         let inner = self.inner_exclusive_access();
-//         let other_inner = other.inner_exclusive_access();
-//         inner.pass == other_inner.pass
-//     }
-// }
-
-impl Eq for TaskControlBlock {
-
-}
-
-impl PartialEq for TaskControlBlock {
-    fn eq(&self, other: &Self) -> bool {
-        self.pid.0 == other.pid.0
-    }
-}
-
-impl Ord for TaskControlBlock {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let lpass = self.inner_exclusive_access().pass;
-        let rpass = other.inner_exclusive_access().pass;
-        rpass.cmp(&lpass)
-    }
-}
-
-impl PartialOrd for TaskControlBlock {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl TaskControlBlock {
-    pub fn step(&self) {
-        let mut inner = self.inner_exclusive_access();
-        inner.pass = inner.pass.wrapping_add(inner.stride);
-    }
-}
+use crate::timer::{get_time_n,get_time};
+use crate::config::{MAX_SYSCALL_NUM};
 
 /// Task control block structure
 ///
@@ -104,10 +49,10 @@ pub struct TaskControlBlockInner {
     pub children: Vec<Arc<TaskControlBlock>>,
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
-    pub task_syscall_times: [u32; MAX_SYSCALL_NUM],      // record the number of system calls
-    pub task_start_time: usize,
-    pub pass: usize,
-    pub stride: usize,
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    pub start_time: usize,
+    pub pass: usize,//prio times
+    pub stride: usize,//prio stride
 }
 
 /// Simple access to its internal fields
@@ -123,11 +68,17 @@ impl TaskControlBlockInner {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
-    fn get_status(&self) -> TaskStatus {
+    pub fn get_status(&self) -> TaskStatus {
         self.task_status
     }
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
+    }
+    pub fn get_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        self.syscall_times
+    }
+    pub fn update_syscall(&mut self, syscall_id: usize) {
+        self.syscall_times[syscall_id] += 1;
     }
 }
 
@@ -165,10 +116,11 @@ impl TaskControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
-                    task_start_time: 0,
-                    task_syscall_times: [0; MAX_SYSCALL_NUM],
-                    pass: 0,
-                    stride: BIG_STRIDE / 16
+                    syscall_times: [0; MAX_SYSCALL_NUM],
+                    pass:0,
+                    //init prio
+                    stride:BIG_STRIDE / 16,
+                    start_time:0,
                 })
             },
         };
@@ -236,8 +188,8 @@ impl TaskControlBlock {
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,
-                    task_start_time: 0,
-                    task_syscall_times: [0; MAX_SYSCALL_NUM],
+                    start_time: 0,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
                     pass: parent_inner.pass,
                     stride: parent_inner.stride
                 })
@@ -257,37 +209,26 @@ impl TaskControlBlock {
     pub fn getpid(&self) -> usize {
         self.pid.0
     }
+    
 
-    pub fn spawn(self: &Arc<TaskControlBlock>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
-        let task_control_block = Arc::new(TaskControlBlock::new(elf_data));
-        task_control_block.inner_exclusive_access().parent = Some(Arc::downgrade(self));
-
-        let mut parent_inner = self.inner_exclusive_access();
-        parent_inner.children.push(task_control_block.clone());
-
-        task_control_block
+    pub fn get_current_taskinfo(&self, task_info: &mut TaskInfo) {
+        let inner = self.inner.exclusive_access();
+        task_info.status = inner.task_status;
+        task_info.syscall_times = inner.syscall_times;
+        task_info.time = get_time_n(get_time() - inner.start_time) / 1000;
     }
-    pub fn set_priority(self: &Arc<TaskControlBlock>, prio: usize) {
+
+    pub fn set_prio(self: &Arc<TaskControlBlock>, prio: usize){
         let mut inner = self.inner_exclusive_access();
         inner.stride = BIG_STRIDE / prio;
     }
 
-
-    pub fn update_syscall(&self, syscall_id: usize) {
-        let mut inner = self.inner_exclusive_access();
-        inner.task_syscall_times[syscall_id] += 1;
-    }
-
-    pub fn get_current_task_info(&self, task_info: &mut TaskInfo) {
-        let inner = self.inner.exclusive_access();
-        task_info.status = inner.task_status;
-        task_info.syscall_times = inner.task_syscall_times;
-        task_info.time = time_to_ms(get_time() - inner.task_start_time);
-    }
-
-    pub fn get_tcb_ref_mut<T, R>(&self, mut f: T) -> R where T:FnMut(RefMut<TaskControlBlockInner>) -> R {
-        let inner = self.inner_exclusive_access();
-        f(inner)
+    pub fn create_ccp_tc_block(self: &Arc<TaskControlBlock>, elf: &[u8]) -> Arc<TaskControlBlock> {
+        let r = Arc::new(TaskControlBlock::new(elf));
+        r.inner_exclusive_access().parent = Some(Arc::downgrade(self));
+        let mut p = self.inner_exclusive_access();
+        p.children.push(r.clone());
+        r
     }
 }
 

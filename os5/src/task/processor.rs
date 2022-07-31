@@ -11,10 +11,10 @@ use super::{TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
-use core::cell::RefMut;
 use lazy_static::*;
 use crate::syscall::TaskInfo;
-use crate::task::task::{TaskControlBlockInner};
+use crate::mm::{VirtAddr,MapPermission};
+use crate::config::{MAX_SYSCALL_NUM, BIG_STRIDE};
 
 /// Processor management structure
 pub struct Processor {
@@ -72,6 +72,24 @@ pub fn run_tasks() {
     }
 }
 
+// get status of the current task
+pub fn get_current_task_status() -> TaskStatus {
+    let task = current_task().unwrap();
+    let status = task.inner_exclusive_access().get_status();
+    status
+}
+
+pub fn get_current_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let task = current_task().unwrap();
+    let syscall_times = task.inner_exclusive_access().get_syscall_times();
+    syscall_times
+}
+
+pub fn update_syscall_times(syscall_id: usize) {
+    let task = current_task().unwrap();
+    task.inner_exclusive_access().update_syscall(syscall_id);
+}
+
 /// Get current task through take, leaving a None in its place
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
     PROCESSOR.exclusive_access().take_current()
@@ -107,14 +125,18 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     }
 }
 
-pub fn get_tcb_ref_mut<T, R>(f: T) -> R where T:FnMut(RefMut<TaskControlBlockInner>) -> R {
-    current_task().unwrap().get_tcb_ref_mut(f)
+pub fn get_current_taskinfo(taskinfo: &mut TaskInfo){
+    current_task().unwrap().get_current_taskinfo(taskinfo);
 }
 
-pub fn update_current_task_syscall(syscall_id: usize) {
-    current_task().unwrap().update_syscall(syscall_id)
+pub fn call_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> isize {
+    let task = current_task().unwrap();
+    let memory_set = &mut task.inner_exclusive_access().memory_set;
+    memory_set.set_mmap(start_va, end_va, perm)
 }
 
-pub fn get_current_task_info(task_info: &mut TaskInfo) {
-    current_task().unwrap().get_current_task_info(task_info)
+pub fn call_munmap(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+    let task = current_task().unwrap();
+    let memory_set = &mut task.inner_exclusive_access().memory_set;
+    memory_set.set_munmap(start_va, end_va)
 }

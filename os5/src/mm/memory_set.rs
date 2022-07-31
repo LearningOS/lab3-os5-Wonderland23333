@@ -252,52 +252,39 @@ impl MemorySet {
         //*self = Self::new_bare();
         self.areas.clear();
     }
-
-    fn is_mem_in_use(&self, start_va: usize, end_va: usize) -> bool {
+    pub fn set_mmap(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize{
         for area in &self.areas {
-            let start: VirtAddr = area.vpn_range.get_start().into();
-            let end: VirtAddr = area.vpn_range.get_end().into();
-
-            if (start.0 < end_va && start.0 >= start_va) || (end.0 < end_va && end.0 > start_va) {
-                return true;
+            let left: VirtAddr = area.vpn_range.get_start().into();
+            let right: VirtAddr = area.vpn_range.get_end().into();
+            if (left < end_va && start_va < left) || (right < end_va && start_va < right) {
+                return 1;
+            }else{
+            return -1
+        }
+        }
+        self.insert_framed_area(start_va, end_va, permission);
+        1
+    }
+    pub fn set_munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let len = self.areas.len();
+        let mut index= 0;
+        let mut find = -1;
+        for i in 0..len {
+            let left: VirtAddr = self.areas[i].vpn_range.get_start().into();
+            let right: VirtAddr = self.areas[i].vpn_range.get_end().into();
+            if start_va == left && right == end_va {
+                index = i;
+                find = 1;
+                break;
             }
         }
-        false
-    }
-
-    fn is_mem_all_in_use(&self, start_va: usize, end_va: usize) -> bool {
-        for area in &self.areas {
-            let start: VirtAddr = area.vpn_range.get_start().into();
-            let end: VirtAddr = area.vpn_range.get_end().into();
-
-            if start.0 == start_va &&  end.0 == end_va {
-                return true;
-            }
+        if find == 1{
+            let mut  x = self.areas.remove(index);
+            x.unmap(&mut self.page_table);
+            return 1;
+        } else {
+            return -1;
         }
-        false
-    }
-
-    pub fn munmap(&mut self, start_va: usize, len: usize) -> bool {
-        let end_va = start_va + len;
-        if self.is_mem_all_in_use(start_va, end_va) == false {
-            return false
-        }
-        let mut removed: Vec<_> = self.areas.drain_filter(|area| {
-            let start: VirtAddr = area.vpn_range.get_start().into();
-            let end: VirtAddr = area.vpn_range.get_end().into();
-
-            start.0 >= start_va && end.0 <= end_va
-        }).collect();
-        removed.iter_mut().for_each(|x| x.unmap(&mut self.page_table));
-        true
-    }
-
-    pub fn mmap(&mut self, start_va: usize, end_va: usize, permission: MapPermission) -> bool {
-        if self.is_mem_in_use(start_va, end_va) {
-            return false
-        }
-        self.insert_framed_area(start_va.into(), end_va.into(), permission);
-        true
     }
 }
 

@@ -151,6 +151,9 @@ impl PhysAddr {
     pub fn get_mut<T>(&self) -> &'static mut T {
         unsafe { (self.0 as *mut T).as_mut().unwrap() }
     }
+    pub fn combine(ppn: PhysPageNum, offset: usize) -> Self {
+        PhysAddr(PhysAddr::from(ppn).0 | (offset & (PAGE_SIZE - 1)))
+    }
 }
 impl PhysPageNum {
     pub fn get_pte_array(&self) -> &'static mut [PageTableEntry] {
@@ -241,6 +244,5 @@ where
         }
     }
 }
-
 /// a simple range structure for virtual page number
 pub type VPNRange = SimpleRange<VirtPageNum>;
