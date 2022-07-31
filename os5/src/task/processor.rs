@@ -11,9 +11,10 @@ use super::{TaskContext, TaskControlBlock};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
+use core::cell::RefMut;
 use lazy_static::*;
 use crate::syscall::TaskInfo;
-use crate::mm::{VirtAddr,MapPermission};
+use crate::task::task::{TaskControlBlockInner};
 
 /// Processor management structure
 pub struct Processor {
@@ -106,18 +107,14 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     }
 }
 
-pub fn get_current_taskinfo(taskinfo: &mut TaskInfo){
-    current_task().unwrap().get_current_taskinfo(taskinfo);
+pub fn get_tcb_ref_mut<T, R>(f: T) -> R where T:FnMut(RefMut<TaskControlBlockInner>) -> R {
+    current_task().unwrap().get_tcb_ref_mut(f)
 }
 
-pub fn set_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> bool {
-    let task = current_task().unwrap();
-    let memory_set = &mut task.inner_exclusive_access().memory_set;
-    memory_set.set_mmap(start_va, end_va, perm)
+pub fn update_current_task_syscall(syscall_id: usize) {
+    current_task().unwrap().update_syscall(syscall_id)
 }
 
-pub fn set_munmap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
-    let task = current_task().unwrap();
-    let memory_set = &mut task.inner_exclusive_access().memory_set;
-    memory_set.set_munmap(start_va, end_va)
+pub fn get_current_task_info(task_info: &mut TaskInfo) {
+    current_task().unwrap().get_current_task_info(task_info)
 }
