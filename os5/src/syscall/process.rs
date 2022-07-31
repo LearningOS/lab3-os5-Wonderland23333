@@ -174,7 +174,10 @@ pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
     let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
     let ok = call_mmap(start_va, end_va, perm);
-    ok
+    if !ok {
+        return -1
+    }
+    0
 }
 
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
@@ -190,7 +193,10 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
     
     let ok = call_munmap(start_va, end_va);
-    ok
+    if !ok {
+        return -1
+    }
+    0
 }
 
 //
