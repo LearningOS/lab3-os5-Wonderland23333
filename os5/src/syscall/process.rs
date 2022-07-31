@@ -6,7 +6,7 @@ use crate::loader::get_app_data_by_name;
 use crate::mm::{translated_refmut, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,get_current_taskinfo
+    suspend_current_and_run_next, TaskStatus,get_current_taskinfo, call_map, drop_munmap,
 };
 use crate::timer::get_time_us;
 use alloc::sync::Arc;
@@ -156,13 +156,12 @@ pub fn sys_set_priority(prio: isize) -> isize {
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    call_map(start,len,port)
 }
 
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    drop_munmap(start,len)
 }
 
 //

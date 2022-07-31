@@ -252,6 +252,16 @@ impl MemorySet {
         //*self = Self::new_bare();
         self.areas.clear();
     }
+    pub fn munmap(&mut self, vprg: VPNRange) {
+        for vpn in vprg.into_iter() {
+            if let Some(area) = self.areas.iter_mut().find(|area| {
+                let arrg = area.vpn_range;
+                vpn.0 >= arrg.get_start().0 && vpn.0 < arrg.get_end().0
+            }) {
+                area.unmap_one(&mut self.page_table, vpn);
+            }
+        }
+    }
 }
 
 /// map area structure, controls a contiguous piece of virtual memory

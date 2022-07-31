@@ -244,6 +244,5 @@ where
         }
     }
 }
-
 /// a simple range structure for virtual page number
 pub type VPNRange = SimpleRange<VirtPageNum>;
