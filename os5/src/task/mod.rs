@@ -23,15 +23,11 @@ use lazy_static::*;
 use manager::fetch_task;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-pub use crate::mm::{VirtAddr,VirtPageNum,MapPermission,VPNRange};
-
 
 pub use context::TaskContext;
-pub use manager::{add_task};
+pub use manager::add_task;
 pub use pid::{pid_alloc, KernelStack, PidHandle};
-pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,call_mmap,call_munmap,update_syscall_times,get_current_task_status,get_current_syscall_times
-};
+pub use processor::*;
 
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {

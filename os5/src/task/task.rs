@@ -2,14 +2,13 @@
 
 use super::TaskContext;
 use super::{pid_alloc, KernelStack, PidHandle};
-use crate::config::{TRAP_CONTEXT, BIG_STRIDE};
+use crate::config::{TRAP_CONTEXT, MAX_SYSCALL_NUM};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
-use crate::config::{MAX_SYSCALL_NUM};
 
 /// Task control block structure
 ///
@@ -47,10 +46,14 @@ pub struct TaskControlBlockInner {
     pub children: Vec<Arc<TaskControlBlock>>,
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
-    pub syscall_times: [u32; MAX_SYSCALL_NUM],
-    pub start_time: usize,
-    pub pass: usize,//prio times
-    pub stride: usize,//prio stride
+
+    /// for task info
+    pub task_syscall_times: [u32; MAX_SYSCALL_NUM],
+
+    // for stride scheduling
+    pub stride: u8,
+    // pub pass: u32,
+    pub priority: u8,
 }
 
 /// Simple access to its internal fields
@@ -72,11 +75,13 @@ impl TaskControlBlockInner {
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
+
     pub fn get_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
-        self.syscall_times
+        self.task_syscall_times
     }
-    pub fn update_syscall(&mut self, syscall_id: usize) {
-        self.syscall_times[syscall_id] += 1;
+
+    pub fn set_syscall_times(&mut self, id: usize) {
+        self.task_syscall_times[id] += 1;
     }
 }
 
@@ -114,11 +119,9 @@ impl TaskControlBlock {
                     parent: None,
                     children: Vec::new(),
                     exit_code: 0,
-                    syscall_times: [0; MAX_SYSCALL_NUM],
-                    pass:0,
-                    //init prio
-                    stride:BIG_STRIDE / 16,
-                    start_time:0,
+                    task_syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
                 })
             },
         };
@@ -186,10 +189,9 @@ impl TaskControlBlock {
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,
-                    start_time: 0,
-                    syscall_times: [0; MAX_SYSCALL_NUM],
-                    pass: parent_inner.pass,
-                    stride: parent_inner.stride
+                    task_syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
                 })
             },
         });
@@ -204,21 +206,57 @@ impl TaskControlBlock {
         // ---- release parent PCB automatically
         // **** release children PCB automatically
     }
-    pub fn getpid(&self) -> usize {
-        self.pid.0
-    }
-    
-    pub fn set_prio(self: &Arc<TaskControlBlock>, prio: usize){
-        let mut inner = self.inner_exclusive_access();
-        inner.stride = BIG_STRIDE / prio;
+
+    pub fn spawn(&self, elf_data: &[u8]) -> Arc<TaskControlBlock> {
+        // this code piece is modified from new functions
+        // memory_set with elf program headers/trampoline/trap context/user stack
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT).into())
+            .unwrap()
+            .ppn();
+        // alloc a pid and a kernel stack in kernel space
+        let pid_handle = pid_alloc();
+        let kernel_stack = KernelStack::new(&pid_handle);
+        let kernel_stack_top = kernel_stack.get_top();
+        // push a task context which goes to trap_return to the top of kernel stack
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: user_sp,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: None,
+                    children: Vec::new(),
+                    exit_code: 0,
+                    task_syscall_times: [0; MAX_SYSCALL_NUM],
+                    stride: 0,
+                    priority: 16,
+                })
+            },
+        });
+
+        // add child
+        self.inner_exclusive_access().children.push(task_control_block.clone());
+
+        // prepare TrapContext in user space
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+        task_control_block
     }
 
-    pub fn create_ccp_tc_block(self: &Arc<TaskControlBlock>, elf: &[u8]) -> Arc<TaskControlBlock> {
-        let r = Arc::new(TaskControlBlock::new(elf));
-        r.inner_exclusive_access().parent = Some(Arc::downgrade(self));
-        let mut p = self.inner_exclusive_access();
-        p.children.push(r.clone());
-        r
+    pub fn getpid(&self) -> usize {
+        self.pid.0
     }
 }
 
@@ -230,3 +268,21 @@ pub enum TaskStatus {
     Running,
     Zombie,
 }
+
+// #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+// pub struct Stride(u64);
+
+// // Debuging
+// impl Debug for Stride {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//         f.write_fmt(format_args!("Stride: {}", self.0))
+//     }
+// }
+
+// impl From<u64> for Stride {
+//     fn from(v: u64) -> Self {
+//         Self(v)
+//     }
+// }
+
+

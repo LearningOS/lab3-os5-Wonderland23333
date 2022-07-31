@@ -7,12 +7,17 @@
 use super::TaskControlBlock;
 use crate::sync::UPSafeCell;
 use alloc::collections::VecDeque;
+// use alloc::collections::BinaryHeap;
 use alloc::sync::Arc;
 use lazy_static::*;
 
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
 }
+
+// pub struct TaskManager {
+//     ready_queue: BinaryHeap<Arc<TaskControlBlock>>,
+// }
 
 // YOUR JOB: FIFO->Stride
 /// A simple FIFO scheduler.
@@ -28,9 +33,25 @@ impl TaskManager {
     }
     /// Take a process out of the ready queue
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
-        self.ready_queue.pop_front()
+        // self.ready_queue.pop_front()
+
+        // for stride schedule
+        let mut index = 0;
+        let mut minimun_stride = self.ready_queue[index].inner_exclusive_access().stride;
+        for (i, task) in self.ready_queue.iter().enumerate() {
+            let curr_stride = task.inner_exclusive_access().stride;
+            let cmp = (curr_stride - minimun_stride) as i8;
+            if cmp <= 0 {
+                minimun_stride = curr_stride;
+                index = i;
+            }
+        }
+        self.ready_queue.remove(index)
     }
 }
+
+
+
 
 lazy_static! {
     /// TASK_MANAGER instance through lazy_static!

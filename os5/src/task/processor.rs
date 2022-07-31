@@ -8,12 +8,12 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::config::{MAX_SYSCALL_NUM, BIG_STRIDE};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
-use crate::mm::{VirtAddr,MapPermission};
-use crate::config::{MAX_SYSCALL_NUM};
+use crate::mm::*;
 
 /// Processor management structure
 pub struct Processor {
@@ -59,6 +59,8 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            // accumulate stride 
+            task_inner.stride += BIG_STRIDE / task_inner.priority;
             drop(task_inner);
             // release coming task TCB manually
             processor.current = Some(task);
@@ -84,9 +86,26 @@ pub fn get_current_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
     syscall_times
 }
 
-pub fn update_syscall_times(syscall_id: usize) {
+pub fn incr_syscall_times(syscall_id: usize) {
     let task = current_task().unwrap();
-    task.inner_exclusive_access().update_syscall(syscall_id);
+    task.inner_exclusive_access().set_syscall_times(syscall_id);
+}
+
+pub fn set_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> bool {
+    let task = current_task().unwrap();
+    let memory_set = &mut task.inner_exclusive_access().memory_set;
+    memory_set.set_mmap(start_va, end_va, perm)
+}
+
+pub fn set_munmap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
+    let task = current_task().unwrap();
+    let memory_set = &mut task.inner_exclusive_access().memory_set;
+    memory_set.set_munmap(start_va, end_va)
+}
+
+pub fn set_priority(prio: isize) {
+    let task = current_task().unwrap();
+    task.inner_exclusive_access().priority = prio as u8;
 }
 
 /// Get current task through take, leaving a None in its place
@@ -122,17 +141,4 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
-}
-
-
-pub fn call_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> bool {
-    let task = current_task().unwrap();
-    let memory_set = &mut task.inner_exclusive_access().memory_set;
-    memory_set.set_mmap(start_va, end_va, perm)
-}
-
-pub fn call_munmap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
-    let task = current_task().unwrap();
-    let memory_set = &mut task.inner_exclusive_access().memory_set;
-    memory_set.set_munmap(start_va, end_va)
 }
