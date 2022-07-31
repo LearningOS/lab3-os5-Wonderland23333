@@ -89,13 +89,12 @@ impl MemorySet {
     //     0
     // }
 
- // 检查虚拟内存地址是否重叠
- pub fn check_va_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+ pub fn test_rep(&self, v1: VirtAddr, v2: VirtAddr) -> bool {
     for area in &self.areas {
         let left: VirtAddr = area.vpn_range.get_start().into();
         let right: VirtAddr = area.vpn_range.get_end().into();
 
-        if (left < end_va && start_va < left) || (right < end_va && start_va < right) {
+        if (left < v2 && v1 < left) || (right < v2 && v1 < right) {
             return true;
         }
     }
@@ -103,38 +102,32 @@ impl MemorySet {
 }
 
 // 
-pub fn set_mmap(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> bool {
-    // check overlap
-    let has_overlap = self.check_va_overlap(start_va, end_va);
-    if has_overlap {
+pub fn set_mmap(&mut self, v1: VirtAddr, v2: VirtAddr, permission: MapPermission) -> bool {
+    let t = self.test_rep(v1, v2);
+    if t {
         return false;
     }
-
-    // 
-    self.insert_framed_area(start_va, end_va, permission);
+    self.insert_framed_area(v1, v2, permission);
     true        
 }
 
 //
-pub fn set_munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+pub fn set_munmap(&mut self, v1: VirtAddr, v2: VirtAddr) -> bool {
 
     let len = self.areas.len();
     let mut index= 0;
-    let mut find = false;
+    let mut test = false;
 
     for i in 0..len {
         let left: VirtAddr = self.areas[i].vpn_range.get_start().into();
         let right: VirtAddr = self.areas[i].vpn_range.get_end().into();
-
-        if start_va == left && right == end_va {
+        if v1 == left && right == v2 {
             index = i;
-            find = true;
+            test = true;
             break;
         }
     }
-
-    if find {
-        // 
+    if test {
         let mut  x = self.areas.remove(index);
         x.unmap(&mut self.page_table);
         return true;

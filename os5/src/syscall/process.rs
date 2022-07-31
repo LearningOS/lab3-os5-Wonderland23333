@@ -104,15 +104,15 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 
 // YOUR JOB: 引入虚地址后重写 sys_get_time
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    let _us = get_time_us();
-    let va = VirtAddr::from(_ts as usize);
-    let pa = translated_vapg(current_user_token(), va);
+    let us = get_time_us();
+    let v = VirtAddr::from(_ts as usize);
+    let p = translated_vapg(current_user_token(), v);
 
-    let ptr_ts = pa as *mut TimeVal;
+    let ptr_ts = p as *mut TimeVal;
     unsafe {
         *ptr_ts = TimeVal {
-            sec: _us / 1_000_000,
-            usec: _us % 1_000_000,
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
         };
     }
     0
