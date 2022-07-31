@@ -1,13 +1,13 @@
 //! Process management syscalls
 
-use crate::mm::{PhysAddr, VirtAddr, PageTable,MapPermission};
+use crate::mm::*;
 use crate::config::PAGE_SIZE;
 
 use crate::loader::get_app_data_by_name;
 use crate::mm::{translated_refmut, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,get_current_taskinfo,call_mmap,call_munmap
+    suspend_current_and_run_next, TaskStatus,get_current_syscall_times,call_mmap,call_munmap,get_current_task_status,
 };
 use crate::timer::get_time_us;
 use alloc::sync::Arc;
@@ -109,39 +109,43 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_get_time
-pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
-    let vaddr = VirtAddr(ts as usize);
-    if let Some(x) = get_phy_addr(vaddr) {
-        let us = get_time_us();
-        let nwts = x.0 as *mut TimeVal;
-     unsafe {
-         *nwts = TimeVal {
-             sec: us / 1_000_000,
-             usec: us % 1_000_000,
-         };
-     }
-    0
-    } else {
-    -1
+pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+    let _us = get_time_us();
+    let va = VirtAddr::from(_ts as usize);
+    let pa = translated_va2pa(current_user_token(), va);
+
+    let ptr_ts = pa as *mut TimeVal;
+    unsafe {
+        *ptr_ts = TimeVal {
+            sec: _us / 1_000_000,
+            usec: _us % 1_000_000,
+        };
     }
+    0
 }
 
-pub fn get_phy_addr(vaddr: VirtAddr)->Option<PhysAddr>{
-    let ofs = vaddr.page_offset();
-    let vpn = vaddr.floor();
-    let ppn = PageTable::from_token(current_user_token()).translate(vpn).map(|pgentry| pgentry.ppn());
-    if let Some(ppn) = ppn {
-        Some(PhysAddr::combine(ppn,ofs))
-    } else {
-        None
-    }
+pub fn cal_time(us: usize) -> usize {
+    let sec = us / 1_000_000;
+    let usec = us % 1_000_000;
+
+    ((sec & 0xffff) * 1000 + usec / 1000) as usize
 }
 
 // YOUR JOB: 引入虚地址后重写 sys_task_info
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    let token = current_user_token();
-    let nti = translated_refmut(token,_ti);
-    get_current_taskinfo(nti);
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
+    let va = VirtAddr::from(ti as usize);
+    let pa = translated_va2pa(current_user_token(), va);
+
+    let time = cal_time(get_time_us());
+
+    let ptr_ti = pa as *mut TaskInfo;
+    unsafe {
+        *ptr_ti = TaskInfo {
+            status: get_current_task_status(),
+            syscall_times: get_current_syscall_times(),
+            time,
+        };
+    }
     0
 }
 
@@ -158,21 +162,17 @@ pub fn sys_set_priority(prio: isize) -> isize {
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    if _start % PAGE_SIZE != 0 { // 未对齐
+    if _start % PAGE_SIZE != 0 {
         return -1;
     }
-
     if _port & !0x07 != 0 || _port & 0x07 == 0 || _len <= 0 {
         return -1;
     }
-
     let p = _port as u8;
     let mut perm = MapPermission::from_bits(p << 1).unwrap();
     perm |= MapPermission::U;
-
     let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
     let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
-
     let ok = call_mmap(start_va, end_va, perm);
     ok
 }

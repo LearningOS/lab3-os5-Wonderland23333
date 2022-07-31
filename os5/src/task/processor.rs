@@ -12,9 +12,8 @@ use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
-use crate::syscall::TaskInfo;
 use crate::mm::{VirtAddr,MapPermission};
-use crate::config::{MAX_SYSCALL_NUM, BIG_STRIDE};
+use crate::config::{MAX_SYSCALL_NUM};
 
 /// Processor management structure
 pub struct Processor {
@@ -125,9 +124,6 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     }
 }
 
-pub fn get_current_taskinfo(taskinfo: &mut TaskInfo){
-    current_task().unwrap().get_current_taskinfo(taskinfo);
-}
 
 pub fn call_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> isize {
     let task = current_task().unwrap();

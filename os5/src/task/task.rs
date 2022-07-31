@@ -9,8 +9,6 @@ use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
-use crate::syscall::TaskInfo;
-use crate::timer::{get_time_n,get_time};
 use crate::config::{MAX_SYSCALL_NUM};
 
 /// Task control block structure
@@ -210,14 +208,6 @@ impl TaskControlBlock {
         self.pid.0
     }
     
-
-    pub fn get_current_taskinfo(&self, task_info: &mut TaskInfo) {
-        let inner = self.inner.exclusive_access();
-        task_info.status = inner.task_status;
-        task_info.syscall_times = inner.syscall_times;
-        task_info.time = get_time_n(get_time() - inner.start_time) / 1000;
-    }
-
     pub fn set_prio(self: &Arc<TaskControlBlock>, prio: usize){
         let mut inner = self.inner_exclusive_access();
         inner.stride = BIG_STRIDE / prio;

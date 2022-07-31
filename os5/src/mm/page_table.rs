@@ -142,6 +142,7 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+    
 }
 
 /// translate a pointer to a mutable u8 Vec through page table
@@ -195,4 +196,9 @@ pub fn translated_refmut<T>(token: usize, ptr: *mut T) -> &'static mut T {
         .translate_va(VirtAddr::from(va))
         .unwrap()
         .get_mut()
+}
+pub fn translated_va2pa(token: usize, va: VirtAddr) -> usize {
+    let page_table = PageTable::from_token(token);
+    let pa = page_table.translate_va(va).unwrap();
+    pa.0
 }
