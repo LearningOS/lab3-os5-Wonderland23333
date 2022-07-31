@@ -24,13 +24,13 @@ use manager::fetch_task;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 pub use crate::mm::{VirtAddr,VirtPageNum,MapPermission,VPNRange};
-use crate::config::PAGE_SIZE;
+
 
 pub use context::TaskContext;
 pub use manager::{add_task};
 pub use pid::{pid_alloc, KernelStack, PidHandle};
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task, get_current_taskinfo,
+    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task, get_current_taskinfo,call_mmap,call_munmap
 };
 
 /// Make current task suspended and switch to the next task
@@ -86,50 +86,6 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 
-pub fn call_map(start: usize, len: usize, port: usize) -> isize {
-    if start & (PAGE_SIZE - 1) != 0 {
-        return -1;
-    }
-    if port == 0 || port > 7usize  {
-        return -1;
-    }
-    let task = take_current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
-    let memory_set = &mut inner.memory_set;
-    let v1 = VirtPageNum::from(VirtAddr(start));
-    let v2 = VirtPageNum::from(VirtAddr(start + len).ceil());
-    for vpn in  v1.0 .. v2.0 {
-        if let Some(m) = memory_set.translate(VirtPageNum(vpn)) {
-            if m.is_valid() {
-                return -1;
-            }
-        }
-    }
-    let permission = MapPermission::from_bits((port as u8) << 1).unwrap() | MapPermission::U;
-    memory_set.insert_framed_area(VirtAddr(start), VirtAddr(start+len), permission);
-    0
-}
-
-pub fn drop_munmap(start: usize, len: usize) -> isize{
-    if start & (PAGE_SIZE - 1) != 0 {
-        return -1;
-    }
-    let v1 = VirtPageNum::from(VirtAddr(start));
-    let v2 = VirtPageNum::from(VirtAddr(start + len).ceil());
-    let task = take_current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
-    let memory_set = &mut inner.memory_set;
-    for vpn in v1.0 .. v2.0 {
-        if let Some(m) = memory_set.translate(VirtPageNum(vpn)) {
-            if !m.is_valid() {
-                return -1;
-            }
-        }
-    }
-    let bound = VPNRange::new(v1, v2);
-    memory_set.munmap(bound);
-    0
-}
 lazy_static! {
     /// Creation of initial process
     ///

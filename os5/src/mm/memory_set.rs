@@ -252,14 +252,45 @@ impl MemorySet {
         //*self = Self::new_bare();
         self.areas.clear();
     }
-    pub fn munmap(&mut self, vprg: VPNRange) {
-        for vpn in vprg.into_iter() {
-            if let Some(area) = self.areas.iter_mut().find(|area| {
-                let arrg = area.vpn_range;
-                vpn.0 >= arrg.get_start().0 && vpn.0 < arrg.get_end().0
-            }) {
-                area.unmap_one(&mut self.page_table, vpn);
+    pub fn set_mmap(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) -> isize{
+        // check overlap
+        for area in &self.areas {
+            let left: VirtAddr = area.vpn_range.get_start().into();
+            let right: VirtAddr = area.vpn_range.get_end().into();
+    
+            if (left < end_va && start_va < left) || (right < end_va && start_va < right) {
+                return 1;
+            }else{
+            return -1
+        }
+        }
+        self.insert_framed_area(start_va, end_va, permission);
+        1
+    }
+    pub fn set_munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+
+        let len = self.areas.len();
+        let mut index= 0;
+        let mut find = -1;
+    
+        for i in 0..len {
+            let left: VirtAddr = self.areas[i].vpn_range.get_start().into();
+            let right: VirtAddr = self.areas[i].vpn_range.get_end().into();
+    
+            if start_va == left && right == end_va {
+                index = i;
+                find = 1;
+                break;
             }
+        }
+    
+        if find == 1{
+            // 
+            let mut  x = self.areas.remove(index);
+            x.unmap(&mut self.page_table);
+            return 1;
+        } else {
+            return -1;
         }
     }
 }

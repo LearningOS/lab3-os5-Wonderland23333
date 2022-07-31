@@ -13,6 +13,7 @@ use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
 use crate::syscall::TaskInfo;
+use crate::mm::{VirtAddr,MapPermission};
 
 /// Processor management structure
 pub struct Processor {
@@ -107,4 +108,16 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
 
 pub fn get_current_taskinfo(taskinfo: &mut TaskInfo){
     current_task().unwrap().get_current_taskinfo(taskinfo);
+}
+
+pub fn call_mmap(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) -> isize {
+    let task = current_task().unwrap();
+    let memory_set = &mut task.inner_exclusive_access().memory_set;
+    memory_set.set_mmap(start_va, end_va, perm)
+}
+
+pub fn call_munmap(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+    let task = current_task().unwrap();
+    let memory_set = &mut task.inner_exclusive_access().memory_set;
+    memory_set.set_munmap(start_va, end_va)
 }

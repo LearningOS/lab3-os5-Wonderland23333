@@ -1,12 +1,13 @@
 //! Process management syscalls
 
-use crate::mm::{PhysAddr, VirtAddr, PageTable};
+use crate::mm::{PhysAddr, VirtAddr, PageTable,MapPermission};
+use crate::config::PAGE_SIZE;
 
 use crate::loader::get_app_data_by_name;
 use crate::mm::{translated_refmut, translated_str};
 use crate::task::{
     add_task, current_task, current_user_token, exit_current_and_run_next,
-    suspend_current_and_run_next, TaskStatus,get_current_taskinfo, call_map, drop_munmap,
+    suspend_current_and_run_next, TaskStatus,get_current_taskinfo,call_mmap,call_munmap
 };
 use crate::timer::get_time_us;
 use alloc::sync::Arc;
@@ -156,12 +157,40 @@ pub fn sys_set_priority(prio: isize) -> isize {
 }
 
 // YOUR JOB: 扩展内核以实现 sys_mmap 和 sys_munmap
-pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
-    call_map(start,len,port)
+pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+    if _start % PAGE_SIZE != 0 { // 未对齐
+        return -1;
+    }
+
+    if _port & !0x07 != 0 || _port & 0x07 == 0 || _len <= 0 {
+        return -1;
+    }
+
+    let p = _port as u8;
+    let mut perm = MapPermission::from_bits(p << 1).unwrap();
+    perm |= MapPermission::U;
+
+    let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
+    let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
+
+    let ok = call_mmap(start_va, end_va, perm);
+    ok
 }
 
-pub fn sys_munmap(start: usize, len: usize) -> isize {
-    drop_munmap(start,len)
+pub fn sys_munmap(_start: usize, _len: usize) -> isize {
+    if _start % PAGE_SIZE != 0 { // 未对齐
+        return -1;
+    }
+
+    if _len <= 0 {
+        return -1;
+    }
+
+    let start_va: VirtAddr = VirtAddr::from(_start).floor().into();
+    let end_va: VirtAddr = VirtAddr::from(_start + _len).ceil().into();
+    
+    let ok = call_munmap(start_va, end_va);
+    ok
 }
 
 //
@@ -173,7 +202,7 @@ pub fn sys_spawn(path: *const u8) -> isize {
     let n = translated_str(token,ptr);
     if let Some(ne) = get_app_data_by_name(n.as_str()){
         let nelf = current_task().unwrap();
-        let ntask = nelf.create_ccp_tcBlock(ne);
+        let ntask = nelf.create_ccp_tc_block(ne);
         add_task(ntask);
         1
     }else{

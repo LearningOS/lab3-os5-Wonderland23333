@@ -220,7 +220,7 @@ impl TaskControlBlock {
         inner.stride = BIG_STRIDE / prio;
     }
 
-    pub fn create_ccp_tcBlock(self: &Arc<TaskControlBlock>, elf: &[u8]) -> Arc<TaskControlBlock> {
+    pub fn create_ccp_tc_block(self: &Arc<TaskControlBlock>, elf: &[u8]) -> Arc<TaskControlBlock> {
         let r = Arc::new(TaskControlBlock::new(elf));
         r.inner_exclusive_access().parent = Some(Arc::downgrade(self));
         let mut p = self.inner_exclusive_access();
